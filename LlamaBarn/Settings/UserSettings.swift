@@ -124,14 +124,11 @@ enum UserSettings {
   /// The HF cache directory where new model downloads are stored.
   /// Shared with llama.cpp and other HF-aware tools.
   /// Defaults to ~/.cache/huggingface/hub, can be overridden in Settings.
-  /// Falls back to HF_HUB_CACHE env var if set (useful when launched from terminal).
   static var hfCacheDirectory: URL {
     get {
       let dir: URL
       if let path = defaults.string(forKey: Keys.hfCacheDirectory) {
         dir = URL(fileURLWithPath: path, isDirectory: true)
-      } else if let envPath = ProcessInfo.processInfo.environment["HF_HUB_CACHE"] {
-        dir = URL(fileURLWithPath: envPath, isDirectory: true)
       } else {
         dir = defaultHFCacheDirectory
       }
