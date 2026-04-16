@@ -52,27 +52,14 @@ enum FitParamsRunner {
       // Read stdout and stderr concurrently to avoid pipe buffer deadlocks.
       // If we read them sequentially, the process can block writing to stderr
       // while we're blocked reading stdout (or vice versa), causing a hang.
-      var stdoutData = Data()
-      var stderrData = Data()
-      let group = DispatchGroup()
+      async let stdoutRead = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
+      async let stderrRead = stderrPipe.fileHandleForReading.readDataToEndOfFile()
 
-      group.enter()
-      DispatchQueue.global().async {
-        stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-        group.leave()
-      }
-
-      group.enter()
-      DispatchQueue.global().async {
-        stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
-        group.leave()
-      }
-
-      group.wait()
+      let (stdout, stderr) = await (stdoutRead, stderrRead)
       process.waitUntilExit()
 
       guard process.terminationStatus == 0 else {
-        let errOutput = String(data: stderrData, encoding: .utf8) ?? ""
+        let errOutput = String(data: stderr, encoding: .utf8) ?? ""
         // terminationStatus 15 = SIGTERM from cancellation, don't log as error
         if process.terminationStatus != 15 {
           logger.error(
@@ -83,8 +70,8 @@ enum FitParamsRunner {
       }
 
       let output =
-        (String(data: stdoutData, encoding: .utf8) ?? "")
-        + (String(data: stderrData, encoding: .utf8) ?? "")
+        (String(data: stdout, encoding: .utf8) ?? "")
+        + (String(data: stderr, encoding: .utf8) ?? "")
 
       return parseOutput(output)
     } onCancel: {

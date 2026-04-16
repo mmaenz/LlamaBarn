@@ -403,7 +403,8 @@ class ModelManager: NSObject, URLSessionDownloadDelegate {
       // Apply cached fit-params to sideloaded models, track those still pending
       var sideloadedEntries: [CatalogEntry] = []
       var needsFitParams: [(id: String, path: String)] = []
-      for var (entry, paths) in sideloaded {
+      for (entry, paths) in sideloaded {
+        var entry = entry
         if let cached = FitParamsCache.get(modelId: entry.id) {
           entry.ctxBytesPer1kTokens = cached.ctxBytesPer1kTokens
         } else {
@@ -418,8 +419,10 @@ class ModelManager: NSObject, URLSessionDownloadDelegate {
       let catalogDownloaded = allCatalogModels.filter { finalResolved[$0.id] != nil }
       let allDownloaded = catalogDownloaded + sideloadedEntries
 
+      let pendingFitParams = needsFitParams
       await MainActor.run {
-        Self.updateDownloadedModels(allDownloaded, resolved: finalResolved, pending: needsFitParams)
+        Self.updateDownloadedModels(
+          allDownloaded, resolved: finalResolved, pending: pendingFitParams)
       }
     }
   }
@@ -466,18 +469,18 @@ class ModelManager: NSObject, URLSessionDownloadDelegate {
         FitParamsCache.set(params, for: modelId)
 
         // Update the in-memory model entry and refresh the UI
+        guard let mgr = self else { return }
         await MainActor.run {
-          guard let self else { return }
-          if let idx = self.downloadedModels.firstIndex(where: { $0.id == modelId }) {
-            self.downloadedModels[idx].ctxBytesPer1kTokens = params.ctxBytesPer1kTokens
+          if let idx = mgr.downloadedModels.firstIndex(where: { $0.id == modelId }) {
+            mgr.downloadedModels[idx].ctxBytesPer1kTokens = params.ctxBytesPer1kTokens
           }
 
           // Regenerate models.ini now that we have accurate memory info
-          if self.updateModelsFile() {
+          if mgr.updateModelsFile() {
             LlamaServer.shared.reload()
           }
 
-          NotificationCenter.default.post(name: .LBModelDownloadedListDidChange, object: self)
+          NotificationCenter.default.post(name: .LBModelDownloadedListDidChange, object: mgr)
         }
       }
     }
