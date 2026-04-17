@@ -67,8 +67,14 @@ enum HFRepoParser {
       base = String(base.dropLast(5))
     }
 
-    // Skip split shards — quant is not in the shard filename
-    if isSplitShard(filename) { return nil }
+    // For split shards, extract quant from the base name (before the shard suffix).
+    // e.g. "Qwen3.5-122B-A10B-Q4_K_M-00001-of-00003.gguf" → base "Qwen3.5-122B-A10B-Q4_K_M"
+    if isSplitShard(filename) {
+      guard let shardBase = splitShardBaseName(filename) else { return nil }
+      // Strip subdir prefix if present (e.g. "Q4_K_M/Qwen3.5-..." → "Qwen3.5-...")
+      let nameOnly = URL(fileURLWithPath: shardBase).lastPathComponent
+      return parseQuant(filename: nameOnly + ".gguf")
+    }
 
     // Quantization is the last segment after the final "-"
     // e.g. "Llama-3.2-1B-Instruct-Q4_K_M" → "Q4_K_M"

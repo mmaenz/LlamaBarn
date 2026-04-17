@@ -424,17 +424,36 @@ enum HFCache {
       for commit in commits {
         let snapshotDir = snapshotsDir.appendingPathComponent(commit)
 
-        guard let files = try? fm.contentsOfDirectory(atPath: snapshotDir.path) else {
+        // Collect GGUF files from the snapshot dir and one level of subdirs.
+        // Some repos (e.g. unsloth) store sharded quants in per-quant subdirs
+        // like Q4_K_M/model-00001-of-00003.gguf.
+        // Paths are relative to snapshotDir (e.g. "file.gguf" or "Q4_K_M/file.gguf").
+        guard let topFiles = try? fm.contentsOfDirectory(atPath: snapshotDir.path) else {
           continue
         }
 
-        // Collect GGUF files not claimed by the catalog scan.
+        var allFiles: [String] = []
+        for item in topFiles {
+          let itemPath = snapshotDir.appendingPathComponent(item).path
+          var isDir: ObjCBool = false
+          if fm.fileExists(atPath: itemPath, isDirectory: &isDir), isDir.boolValue {
+            if let subFiles = try? fm.contentsOfDirectory(atPath: itemPath) {
+              for subFile in subFiles {
+                allFiles.append("\(item)/\(subFile)")
+              }
+            }
+          } else {
+            allFiles.append(item)
+          }
+        }
+
+        // Filter to GGUF files not claimed by the catalog scan.
         // Skip mmproj files (vision projection) — they're not runnable models.
-        let ggufFiles = files.filter { filename in
-          let lower = filename.lowercased()
-          return lower.hasSuffix(".gguf")
-            && !lower.hasPrefix("mmproj")
-            && !knownFiles.contains("\(repoDir)/\(filename)")
+        let ggufFiles = allFiles.filter { relativePath in
+          let fileName = URL(fileURLWithPath: relativePath).lastPathComponent.lowercased()
+          return fileName.hasSuffix(".gguf")
+            && !fileName.hasPrefix("mmproj")
+            && !knownFiles.contains("\(repoDir)/\(relativePath)")
         }
 
         guard !ggufFiles.isEmpty else { continue }
@@ -496,9 +515,11 @@ enum HFCache {
     // Parse metadata from repo dir name
     guard let parsed = HFRepoParser.parse(repoDir: repoDir) else { return nil }
 
-    // Parse quantization from filename (for standalone files)
-    // For split shards, try the base name or the first shard filename
-    let quant = HFRepoParser.parseQuant(filename: filename) ?? "unknown"
+    // Parse quantization from the filename's last path component.
+    // filename may include a subdir prefix (e.g. "Q4_K_M/model-00001-of-00003.gguf")
+    // but parseQuant expects just the filename.
+    let fileBaseName = URL(fileURLWithPath: filename).lastPathComponent
+    let quant = HFRepoParser.parseQuant(filename: fileBaseName) ?? "unknown"
 
     // Calculate file size (sum all shards if split)
     let filePaths: [String]
