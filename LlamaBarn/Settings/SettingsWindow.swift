@@ -6,10 +6,10 @@ import SwiftUI
 @MainActor
 final class SettingsWindowController: NSObject, NSWindowDelegate {
   static let shared = SettingsWindowController()
-
+  
   private var window: NSWindow?
   private var observer: NSObjectProtocol?
-
+  
   private override init() {
     super.init()
     // Listen for settings show requests
@@ -21,7 +21,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
       }
     }
   }
-
+  
   func showSettings() {
     // If window exists, just bring it to front
     if let window, window.isVisible {
@@ -30,10 +30,10 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
       NSApp.activate(ignoringOtherApps: true)
       return
     }
-
+    
     // Create the SwiftUI content view
     let contentView = SettingsView()
-
+    
     // Create the window
     let window = NSWindow(
       contentRect: NSRect(x: 0, y: 0, width: 440, height: 200),
@@ -46,15 +46,15 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     window.center()
     window.isReleasedWhenClosed = false
     window.delegate = self
-
+    
     self.window = window
-
+    
     // Show window and activate app
     NSApp.setActivationPolicy(.regular)
     window.makeKeyAndOrderFront(nil)
     NSApp.activate(ignoringOtherApps: true)
   }
-
+  
   func windowWillClose(_ notification: Notification) {
     NSApp.setActivationPolicy(.accessory)
   }
@@ -67,7 +67,10 @@ struct SettingsView: View {
   @State private var hfCacheDir = UserSettings.hfCacheDirectory
   @State private var hfToken = UserSettings.hfToken ?? ""
   @State private var showingHFTokenSheet = false
-
+  @State private var customServerArgs = UserSettings.customServerArgs ?? ""
+  @State private var customEnvVars = UserSettings.customEnvVars ?? ""
+  
+  
   var body: some View {
     Form {
       // Launch at login section
@@ -77,13 +80,13 @@ struct SettingsView: View {
             .onChange(of: launchAtLogin) { _, newValue in
               _ = LaunchAtLogin.setEnabled(newValue)
             }
-
+          
           Text("Sits idle in the menu bar, using minimal memory until you start a model.")
             .font(.callout)
             .foregroundStyle(.secondary)
         }
       }
-
+      
       // Sleep idle time section
       Section {
         VStack(alignment: .leading, spacing: 8) {
@@ -99,13 +102,13 @@ struct SettingsView: View {
               UserSettings.sleepIdleTime = newValue
             }
           }
-
+          
           Text("Automatically unloads the model from memory when not in use.")
             .font(.callout)
             .foregroundStyle(.secondary)
         }
       }
-
+      
       // HF cache directory section
       Section {
         VStack(alignment: .leading, spacing: 8) {
@@ -114,9 +117,9 @@ struct SettingsView: View {
           HStack(spacing: 6) {
             Text("Cache directory")
               .fixedSize()
-
+            
             Spacer()
-
+            
             // Path text -- layoutPriority -1 lets it shrink first
             // so buttons stay on the same line
             Text(abbreviatedPath(hfCacheDir))
@@ -126,7 +129,7 @@ struct SettingsView: View {
               .lineLimit(1)
               .truncationMode(.middle)
               .layoutPriority(-1)
-
+            
             // Show restore button only when using custom directory
             if UserSettings.hasCustomHFCacheDirectory {
               Button {
@@ -143,7 +146,7 @@ struct SettingsView: View {
               .help("Restore default directory")
               .fixedSize()
             }
-
+            
             Button("Select...") {
               chooseCacheFolder()
             }
@@ -151,12 +154,13 @@ struct SettingsView: View {
             .controlSize(.small)
             .fixedSize()
           }
-
+          
           Text("Where downloaded models are stored.")
             .font(.callout)
             .foregroundStyle(.secondary)
         }
       }
+      
       // Optional HF access token section
       Section {
         VStack(alignment: .leading, spacing: 8) {
@@ -175,12 +179,59 @@ struct SettingsView: View {
             .font(.callout)
             .controlSize(.small)
           }
-
+          
           Text("Authenticate model downloads; optional.")
             .font(.callout)
             .foregroundStyle(.secondary)
         }
       }
+      
+      // Custom Server parameter
+      Section {
+        VStack(alignment: .leading, spacing: 8) {
+          TextField("-ngl 99", text: $customServerArgs)
+            .onSubmit {
+              let input = customServerArgs
+              DispatchQueue.global(qos: .userInitiated).async {
+                UserSettings.customServerArgs = input
+              }
+            }
+            .textFieldStyle(.roundedBorder)
+            .background(.white.opacity(1.0))
+            .font(.callout)
+            .frame(maxWidth: .infinity)
+            .controlSize(.regular)
+            .labelsHidden()
+          
+          Text("Use custom arguments for starting the server.")
+            .font(.callout)
+            .foregroundStyle(.secondary)
+        }
+      }
+
+      // Custom environment variables
+      Section {
+        VStack(alignment: .leading, spacing: 8) {
+          TextField("GGML_METAL_CONCURRENCY_DISABLE=1;", text: $customEnvVars)
+            .onSubmit {
+              let input = customEnvVars
+              DispatchQueue.global(qos: .userInitiated).async {
+                UserSettings.customEnvVars = input
+              }
+            }
+            .textFieldStyle(.roundedBorder)
+            .background(.white.opacity(1.0))
+            .font(.callout)
+            .frame(maxWidth: .infinity)
+            .controlSize(.regular)
+            .labelsHidden()
+          
+          Text("Use custom environment variables separated by semicolon.")
+            .font(.callout)
+            .foregroundStyle(.secondary)
+        }
+      }
+
       .sheet(isPresented: $showingHFTokenSheet) {
         HFTokenSheet(currentToken: hfToken) { newToken in
           hfToken = newToken
@@ -192,7 +243,7 @@ struct SettingsView: View {
     .frame(width: 440)
     .fixedSize()
   }
-
+  
   /// Opens a folder picker and updates the HF cache directory
   private func chooseCacheFolder() {
     let panel = NSOpenPanel()
@@ -202,23 +253,23 @@ struct SettingsView: View {
     panel.allowsMultipleSelection = false
     panel.message = "Choose a cache directory for AI models"
     panel.prompt = "Select"
-
+    
     // Start in the current cache directory
     panel.directoryURL = hfCacheDir
-
+    
     if panel.runModal() == .OK, let url = panel.url {
       UserSettings.hfCacheDirectory = url
       hfCacheDir = url
       ModelManager.shared.refreshDownloadedModels()
     }
   }
-
+  
   /// Truncated HF token for display -- e.g. "hf_...xyz1"
   private func truncatedToken(_ token: String) -> String {
     guard token.count > 7 else { return token }
     return "\(token.prefix(3))...\(token.suffix(4))"
   }
-
+  
   /// Abbreviates path by replacing home directory with ~
   private func abbreviatedPath(_ url: URL) -> String {
     let path = url.path
@@ -234,20 +285,20 @@ struct SettingsView: View {
 struct HFTokenSheet: View {
   let currentToken: String
   let onSave: (String) -> Void
-
+  
   @Environment(\.dismiss) private var dismiss
   @State private var tokenText: String = ""
-
+  
   private var trimmed: String {
     tokenText.trimmingCharacters(in: .whitespacesAndNewlines)
   }
-
+  
   var body: some View {
     VStack(alignment: .leading, spacing: 16) {
       VStack(alignment: .leading, spacing: 4) {
         Text("Hugging Face Token")
           .font(.headline)
-
+        
         HStack(spacing: 4) {
           Text("Don't have one?")
             .foregroundStyle(.secondary)
@@ -258,7 +309,7 @@ struct HFTokenSheet: View {
         }
         .font(.caption)
       }
-
+      
       TextEditor(text: $tokenText)
         .font(.system(size: 11, design: .monospaced))
         .frame(height: 50)
@@ -270,7 +321,7 @@ struct HFTokenSheet: View {
           RoundedRectangle(cornerRadius: 6)
             .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
         )
-
+      
       HStack {
         // Validation hint
         if !trimmed.isEmpty && !UserSettings.isValidHFToken(trimmed) {
@@ -278,14 +329,14 @@ struct HFTokenSheet: View {
             .font(.caption)
             .foregroundStyle(.red)
         }
-
+        
         Spacer()
-
+        
         Button("Cancel") {
           dismiss()
         }
         .keyboardShortcut(.cancelAction)
-
+        
         Button("Save") {
           onSave(trimmed)
           dismiss()

@@ -7,7 +7,7 @@ enum UserSettings {
     case fiveMin = 300
     case fifteenMin = 900
     case oneHour = 3600
-
+    
     var displayName: String {
       switch self {
       case .disabled: return "Off"
@@ -17,7 +17,7 @@ enum UserSettings {
       }
     }
   }
-
+  
   private enum Keys {
     static let hasSeenWelcome = "hasSeenWelcome"
     static let exposeToNetwork = "exposeToNetwork"
@@ -26,10 +26,12 @@ enum UserSettings {
     static let modelStorageDirectory = "modelStorageDirectory"  // legacy, kept for backward compat
     static let hfCacheDirectory = "hfCacheDirectory"
     static let hfToken = "hfToken"
+    static let customServerArgs = "customServerArgs"
+    static let customEnvVars = "customEnvVars"
   }
-
+  
   private static let defaults = UserDefaults.standard
-
+  
   /// Whether the user has seen the welcome popover on first launch.
   static var hasSeenWelcome: Bool {
     get {
@@ -39,7 +41,7 @@ enum UserSettings {
       defaults.set(newValue, forKey: Keys.hasSeenWelcome)
     }
   }
-
+  
   /// The network bind address for llama-server, or `nil` for localhost only.
   /// Accepts either a bool (`true` binds to `0.0.0.0`) or a specific IP address string.
   /// Examples:
@@ -59,7 +61,7 @@ enum UserSettings {
     // Not set or false → localhost only
     return nil
   }
-
+  
   /// How long to wait before unloading the model from memory when idle.
   /// Defaults to 5 minutes.
   static var sleepIdleTime: SleepIdleTime {
@@ -74,18 +76,18 @@ enum UserSettings {
       NotificationCenter.default.post(name: .LBUserSettingsDidChange, object: nil)
     }
   }
-
+  
   // MARK: - Context Tier Preferences
-
+  
   /// Returns the user-selected context tier for a model, or nil if not set.
   /// When nil, the model should use the default 4K tier.
   static func selectedCtxTier(for modelId: String) -> ContextTier? {
     guard let dict = defaults.dictionary(forKey: Keys.selectedCtxTiers),
-      let rawValue = dict[modelId] as? Int
+          let rawValue = dict[modelId] as? Int
     else { return nil }
     return ContextTier(rawValue: rawValue)
   }
-
+  
   /// Sets the user-selected context tier for a model.
   /// Pass nil to clear the preference and use the default (4K).
   static func setSelectedCtxTier(_ tier: ContextTier?, for modelId: String) {
@@ -98,9 +100,9 @@ enum UserSettings {
     defaults.set(dict, forKey: Keys.selectedCtxTiers)
     NotificationCenter.default.post(name: .LBUserSettingsDidChange, object: nil)
   }
-
+  
   // MARK: - Legacy Model Directory
-
+  
   /// The legacy flat directory for models (~/.llamabarn).
   /// Always scanned on startup for backward compat with pre-HF-cache installs.
   /// Also holds models.ini for llama-server.
@@ -112,15 +114,15 @@ enum UserSettings {
     }
     return dir
   }()
-
+  
   // MARK: - HF Cache Directory
-
+  
   /// The default HF cache directory (~/.cache/huggingface/hub)
   static let defaultHFCacheDirectory: URL = {
     FileManager.default.homeDirectoryForCurrentUser
       .appendingPathComponent(".cache/huggingface/hub", isDirectory: true)
   }()
-
+  
   /// The HF cache directory where new model downloads are stored.
   /// Shared with llama.cpp and other HF-aware tools.
   /// Defaults to ~/.cache/huggingface/hub, can be overridden in Settings.
@@ -132,12 +134,12 @@ enum UserSettings {
       } else {
         dir = defaultHFCacheDirectory
       }
-
+      
       // Ensure directory exists
       if !FileManager.default.fileExists(atPath: dir.path) {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
       }
-
+      
       return dir
     }
     set {
@@ -148,14 +150,14 @@ enum UserSettings {
       }
     }
   }
-
+  
   /// Whether a custom HF cache directory is configured
   static var hasCustomHFCacheDirectory: Bool {
     defaults.string(forKey: Keys.hfCacheDirectory) != nil
   }
-
+  
   // MARK: - Hugging Face Token
-
+  
   /// Optional token that authenticates downloads from Hugging Face.
   /// Stored in UserDefaults (not Keychain) — fine given most users would use
   /// a fine-grained token with minimal permissions.
@@ -171,11 +173,40 @@ enum UserSettings {
       }
     }
   }
-
+  
   /// Validates that a string looks like a Hugging Face access token.
   static func isValidHFToken(_ token: String) -> Bool {
     return token.hasPrefix("hf_")
-      && token.count > 3
-      && token.dropFirst(3).allSatisfy { $0.isLetter || $0.isNumber }
+    && token.count > 3
+    && token.dropFirst(3).allSatisfy { $0.isLetter || $0.isNumber }
   }
+  
+  /// Custom server arguments stored in UserDefaults
+  static var customServerArgs: String? {
+    get {
+      defaults.string(forKey: Keys.customServerArgs)
+    }
+    set {
+      if let newValue, !newValue.isEmpty {
+        defaults.set(newValue, forKey: Keys.customServerArgs)
+      } else {
+        defaults.removeObject(forKey: Keys.customServerArgs)
+      }
+    }
+  }
+  
+  /// Custom environment variables stored in UserDefaults
+  static var customEnvVars: String? {
+    get {
+      defaults.string(forKey: Keys.customEnvVars)
+    }
+    set {
+      if let newValue, !newValue.isEmpty {
+        defaults.set(newValue, forKey: Keys.customEnvVars)
+      } else {
+        defaults.removeObject(forKey: Keys.customEnvVars)
+      }
+    }
+  }
+
 }

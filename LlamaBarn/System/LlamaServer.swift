@@ -73,7 +73,7 @@ class LlamaServer {
   private var settingsObserver: NSObjectProtocol?
 
   init() {
-    libFolderPath = Bundle.main.bundlePath + "/Contents/MacOS/llama-cpp"
+    libFolderPath = Bundle.main.bundlePath + "/Contents/MacOS"
 
     // Listen for settings changes to reload server if needed (e.g. sleep timer)
     settingsObserver = NotificationCenter.default.addObserver(
@@ -114,7 +114,7 @@ class LlamaServer {
     }
 
     setHandler(for: errorPipe) { message in
-      self.logger.error("llama-server error: \(message, privacy: .public)")
+      self.logger.error("[llama-server]: \(message, privacy: .public)")
     }
   }
 
@@ -159,13 +159,17 @@ class LlamaServer {
     try? FileManager.default.createDirectory(
       atPath: emptyCachePath, withIntermediateDirectories: true)
 
-    let env = [
-      "GGML_METAL_NO_RESIDENCY": "1",
+    var env = [
       // Set HF_HUB_CACHE so llama-server can resolve model paths in preset
       "HF_HUB_CACHE": UserSettings.hfCacheDirectory.path,
       "LLAMA_CACHE": emptyCachePath,
     ]
 
+    #if arch(arm64)
+      env["GGML_METAL_NO_RESIDENCY"] =  "1"
+    #endif
+
+    
     var arguments = [
       "--models-preset", presetsPath,
       "--port", String(port),
@@ -187,6 +191,18 @@ class LlamaServer {
       ])
     }
 
+    if let customServerArgs = UserSettings.customServerArgs {
+      let components = customServerArgs.split(separator: /\s(?=--?)/)
+      for value in components {
+        let parts = value.split(separator: " ", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
+        if parts.count == 2 {
+          arguments.append(contentsOf: [
+            parts[0], parts[1]
+          ])
+        }
+      }
+    }
+    
     let workingDirectory = CatalogEntry.legacyStorageDir.path
 
     let process = Process()
@@ -194,10 +210,23 @@ class LlamaServer {
     process.arguments = arguments
     process.currentDirectoryURL = URL(fileURLWithPath: workingDirectory)
 
+    if let customEnvVars = UserSettings.customEnvVars, !customEnvVars.isEmpty {
+      let customEnvMap = customEnvVars.split(separator: ";").reduce(into: [String: String]()) { dict, pair in
+        let parts = pair.split(separator: "=", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
+        if parts.count == 2 {
+          dict[parts[0]] = parts[1]
+        }
+      }
+      env.merge(customEnvMap) { (current, new) in new }
+    }
+    
     var environment = ProcessInfo.processInfo.environment
     for (key, value) in env { environment[key] = value }
     process.environment = environment
 
+    print("Server environment: ", env)
+    print("Server arguments  : ", arguments)
+    
     process.standardOutput = Pipe()
     process.standardError = Pipe()
 
@@ -273,7 +302,7 @@ class LlamaServer {
     if process.isRunning {
       process.terminate()
 
-      DispatchQueue.global().asyncAfter(deadline: .now() + 2.0) {
+      DispatchQueue.global().asyncAfter(deadline: .now() + 5.0) {
         if process.isRunning {
           kill(process.processIdentifier, SIGKILL)
         }
